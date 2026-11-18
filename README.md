@@ -1,4 +1,4 @@
-# Live Translator
+# Hai Quach Translator
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/thanhsang9789/live-translator)
 
