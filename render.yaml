@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: live-translator
+    name: hai-quach-translator
     runtime: docker
     plan: free
     autoDeploy: true
