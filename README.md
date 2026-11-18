@@ -1,5 +1,7 @@
 # Live Translator
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/thanhsang9789/live-translator)
+
 Real-time audio and live caption translation web app powered by the Gemini Live API. Speak in any language and hear the translation immediately. The default is **conversation mode**: a bidirectional interpreter between the two selected languages (97 languages, custom glossary), so two people can talk to each other naturally. Toggling **Simul** switches to simultaneous translation mode (78 languages, auto-detect source language, one-way into the target).
 
 Includes a built-in **Light & Dark theme** toggle in the header (synced automatically with the `/caption` overlay window and persisted in your browser).
