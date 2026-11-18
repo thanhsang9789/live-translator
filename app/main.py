@@ -168,7 +168,13 @@ app = FastAPI()
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+# Gemini Live API (BidiGenerateContent) is served on v1beta; google-genai 3.x
+# defaults to v1 unless configured, which causes WebSocket HTTP 404.
+os.environ.setdefault("GOOGLE_GENAI_API_VERSION", "v1beta")
+client = genai.Client(
+    api_key=os.environ["GOOGLE_API_KEY"],
+    http_options={"api_version": "v1beta"},
+)
 TEXT_TRANSLATION_MODEL = os.getenv("TEXT_TRANSLATION_MODEL", "gemini-3.5-flash-lite")
 FALLBACK_LIVE_MODELS = [
     MODEL,

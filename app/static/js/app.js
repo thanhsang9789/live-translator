@@ -458,6 +458,13 @@ function connectWebsocket() {
   websocket.onmessage = function (event) {
     const serverMsg = JSON.parse(event.data);
 
+    if ("textAccepted" in serverMsg || "textError" in serverMsg) {
+      if (typeof window._onWsTextAck === "function") {
+        window._onWsTextAck(serverMsg);
+      }
+      return;
+    }
+
     // Handle turn complete
     if (serverMsg.turnComplete === true) {
       if (simulIdleTimer) { clearTimeout(simulIdleTimer); simulIdleTimer = null; }
@@ -1627,11 +1634,59 @@ window.addEventListener("storage", (e) => {
 });
 
 /**
- * Typed Text Translation (#messageForm -> POST /api/translate)
+ * Typed Text Translation (#messageForm -> Live WS with spoken audio, or POST /api/translate fallback)
  */
 const messageForm = document.getElementById("messageForm");
 const messageInput = document.getElementById("message");
 const sendButton = document.getElementById("sendButton");
+
+async function ensureAudioPlayer() {
+  if (audioPlayerNode && audioPlayerContext) {
+    if (audioPlayerContext.state === "suspended") {
+      await audioPlayerContext.resume().catch(() => {});
+    }
+    return;
+  }
+  try {
+    const [node, ctx, sinkId, gain] = await startAudioPlayerWorklet(getPriority(AUDIO_OUTPUT_KEY));
+    audioPlayerNode = node;
+    audioPlayerContext = ctx;
+    activeOutputDeviceId = sinkId;
+    audioPlayerGain = gain;
+    applyOutputGain();
+  } catch (err) {
+    console.warn("Could not start audio player for text translation:", err);
+  }
+}
+
+function sendTextViaLiveWs(text, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    if (simulMode || !websocket || websocket.readyState !== WebSocket.OPEN) {
+      resolve({ ok: false });
+      return;
+    }
+    const timer = setTimeout(() => {
+      window._onWsTextAck = null;
+      resolve({ ok: false });
+    }, timeoutMs);
+    window._onWsTextAck = (msg) => {
+      clearTimeout(timer);
+      window._onWsTextAck = null;
+      if (msg && msg.textAccepted) {
+        resolve({ ok: true });
+      } else {
+        resolve({ ok: false, error: msg && msg.textError });
+      }
+    };
+    try {
+      websocket.send(JSON.stringify({ type: "text", text }));
+    } catch {
+      clearTimeout(timer);
+      window._onWsTextAck = null;
+      resolve({ ok: false });
+    }
+  });
+}
 
 if (messageForm && messageInput && sendButton) {
   messageForm.addEventListener("submit", async (e) => {
@@ -1645,7 +1700,20 @@ if (messageForm && messageInput && sendButton) {
     const userBubble = createMessageBubble(raw, true, false);
     userBubble.classList.add("transcription");
     messagesDiv.appendChild(userBubble);
+    scrollToBottom();
 
+    // Ensure speaker output is ready so Gemini Live's spoken translation plays aloud.
+    await ensureAudioPlayer();
+
+    // Try sending through the active Gemini Live WebSocket session first (speaks with chosen Gemini voice).
+    const wsAck = await sendTextViaLiveWs(raw);
+    if (wsAck.ok) {
+      sendButton.disabled = false;
+      messageInput.focus();
+      return;
+    }
+
+    // Fallback to POST /api/translate (used in Simul mode or while Live WS is reconnecting).
     const agentBubble = createMessageBubble("", false, true);
     agentBubble.classList.add("transcription");
     messagesDiv.appendChild(agentBubble);
