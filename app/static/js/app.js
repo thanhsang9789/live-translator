@@ -1579,3 +1579,47 @@ document.getElementById("openAudio").addEventListener("click", async () => {
   await populateAudioDevices();
   updateModelDisplay();
 });
+
+/**
+ * Light / Dark Theme Toggle (per browser, synced to Caption Overlay)
+ */
+const THEME_KEY = "live-translator.theme";
+const themeToggleBtn = document.getElementById("themeToggle");
+const themeToggleLabel = document.getElementById("themeToggleLabel");
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme, persist = false) {
+  const normalized = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalized;
+  if (themeToggleLabel) {
+    themeToggleLabel.textContent = normalized === "dark" ? "Light" : "Dark";
+  }
+  if (themeToggleBtn) {
+    const nextLabel = normalized === "dark" ? "Switch to Light mode" : "Switch to Dark mode";
+    themeToggleBtn.title = nextLabel;
+    themeToggleBtn.setAttribute("aria-label", nextLabel);
+  }
+  if (persist) {
+    localStorage.setItem(THEME_KEY, normalized);
+    overlayChannel.postMessage({ type: "theme", theme: normalized });
+  }
+}
+
+applyTheme(currentTheme(), false);
+
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener("click", () => {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    applyTheme(next, true);
+  });
+}
+
+window.addEventListener("storage", (e) => {
+  if (e.key === THEME_KEY && (e.newValue === "dark" || e.newValue === "light")) {
+    applyTheme(e.newValue, false);
+  }
+});
+

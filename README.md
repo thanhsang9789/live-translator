@@ -1,18 +1,8 @@
 # Live Translator
 
-Real-time audio translation powered by Gemini Live API. Speak in any language and hear the translation immediately. The default is **conversation mode**: a bidirectional interpreter between the two selected languages (97 languages, glossary), so two people can talk to each other. Toggling **Simul** switches to simultaneous translation mode (78 languages, auto-detect source language, one-way into the target).
+Real-time audio and live caption translation web app powered by the Gemini Live API. Speak in any language and hear the translation immediately. The default is **conversation mode**: a bidirectional interpreter between the two selected languages (97 languages, custom glossary), so two people can talk to each other naturally. Toggling **Simul** switches to simultaneous translation mode (78 languages, auto-detect source language, one-way into the target).
 
-[Text Live Translator desktop app — download and user guide](desktop/README.md)
-
-[Text Live Translator Chrome extension — download and user guide](extension/README.md)
-
-![Demo](demo.gif)
-
-A browser tab's audio — a video, a webinar, the remote side of a call — is something a web page cannot reach, so that case grew a Chrome extension of its own: **[Interpretab](https://github.com/kazunori279/interpretab)**, now a separate repo that talks to the Gemini Live API directly ([why](#chrome-extension--interpretab)).
-
-## Slides
-
-[**Real-time voice on the Gemini Live API**](https://kazunori279.github.io/live-translator/slides/) — a ~15 minute deck that uses this app as the worked example: what it does, the Gemini Live API underneath it, and what an hour of soak testing on Cloud Run taught us. Press `n` for speaker notes, `f` for fullscreen, `⌘P` to export a PDF.
+Includes a built-in **Light & Dark theme** toggle in the header (synced automatically with the `/caption` overlay window and persisted in your browser).
 
 ## Getting Started
 
@@ -114,8 +104,6 @@ Changes take effect next time the session starts — click **Start** again, or c
 ### Caption Overlay
 
 Put translated subtitles on top of any window — useful for presenting at an event, or for screen sharing on Google Meet. Click **Caption** in the header, or go to `/caption`.
-
-![Caption Overlay](caption.png)
 
 1. Open the main app in Chrome and click **Start** to begin translating
 2. Click **Caption** in the header — a new window opens with a "Select Window" button
