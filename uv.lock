@@ -331,7 +331,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -628,10 +628,13 @@ name = "live-translation"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "fastapi" },
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "python-dotenv" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -644,13 +647,16 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi" },
     { name = "certifi", marker = "extra == 'test'" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "google-cloud-speech", marker = "extra == 'test'", specifier = ">=2.28.0" },
     { name = "google-cloud-texttospeech", marker = "extra == 'test'", specifier = ">=2.17.0" },
     { name = "google-genai", specifier = ">=2.8.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
+    { name = "websockets", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'test'", specifier = ">=13.0" },
 ]
 provides-extras = ["test"]

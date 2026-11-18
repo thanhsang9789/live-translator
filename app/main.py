@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 import os
+import ssl
 import sys
 import unicodedata
 import warnings
@@ -12,6 +13,9 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import certifi
+import httpx
+import websockets
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -171,8 +175,17 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # Gemini Live API (BidiGenerateContent) is served on v1beta; google-genai 3.x
 # defaults to v1 unless configured, which causes WebSocket HTTP 404.
 os.environ.setdefault("GOOGLE_GENAI_API_VERSION", "v1beta")
+_RAW_API_KEY = (os.environ.get("GOOGLE_API_KEY") or "").strip()
+HAS_API_KEY = bool(_RAW_API_KEY)
+FALLBACK_UPSTREAM_HTTP = os.getenv(
+    "FALLBACK_UPSTREAM_HTTP", "https://live-translator-v2it.onrender.com"
+).rstrip("/")
+FALLBACK_UPSTREAM_WS = os.getenv(
+    "FALLBACK_UPSTREAM_WS", "wss://live-translator-v2it.onrender.com"
+).rstrip("/")
+
 client = genai.Client(
-    api_key=os.environ["GOOGLE_API_KEY"],
+    api_key=_RAW_API_KEY or "unconfigured-api-key",
     http_options={"api_version": "v1beta"},
 )
 TEXT_TRANSLATION_MODEL = os.getenv("TEXT_TRANSLATION_MODEL", "gemini-3.5-flash-lite")
@@ -207,6 +220,22 @@ async def translate_text(body: TextTranslationRequest):
         raise HTTPException(422, "Choose two different languages for two-way translation.")
     if not TEXT_TRANSLATION_MODEL:
         raise HTTPException(503, "The text translation model is not configured.")
+    if not HAS_API_KEY and FALLBACK_UPSTREAM_HTTP:
+        try:
+            async with httpx.AsyncClient(timeout=35.0) as hc:
+                r = await hc.post(
+                    f"{FALLBACK_UPSTREAM_HTTP}/api/translate",
+                    json=body.model_dump(),
+                )
+            if r.status_code != 200:
+                detail = r.json().get("detail", "Translation is unavailable.") if r.headers.get("content-type", "").startswith("application/json") else "Translation is unavailable."
+                raise HTTPException(r.status_code, detail)
+            return r.json()
+        except HTTPException:
+            raise
+        except Exception:
+            logger.warning("Fallback text translation proxy failed", exc_info=True)
+            raise HTTPException(502, "Translation is unavailable. Please try again.") from None
     if body.bidirectional:
         instruction = (
             f"Translate between {LANGUAGES[body.source]} and {LANGUAGES[body.target]}. "
@@ -278,6 +307,7 @@ async def get_languages():
         "simulPopular": SIMUL_POPULAR_LANGUAGES,
         "voices": VOICES,
         "defaultVoice": DEFAULT_VOICE,
+        "apiKeyConfigured": HAS_API_KEY,
         "activeLiveModel": _live_diag["activeModel"],
         "lastLiveError": _live_diag["lastError"],
     }
@@ -397,6 +427,51 @@ async def websocket_endpoint(
         source, target, simul, convo,
     )
     await websocket.accept()
+
+    if not HAS_API_KEY and FALLBACK_UPSTREAM_WS:
+        upstream_url = (
+            f"{FALLBACK_UPSTREAM_WS}/ws/{user_id}/{session_id}"
+            f"?source={source}&target={target}"
+            f"&simul={'true' if simul else 'false'}"
+            f"&convo={'true' if convo else 'false'}"
+        )
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        try:
+            async with websockets.connect(upstream_url, ssl=ssl_ctx) as up_ws:
+                _live_diag["activeModel"] = f"proxied:{SIMUL_MODEL if simul else MODEL}"
+                _live_diag["lastError"] = None
+
+                async def _client_to_up():
+                    try:
+                        while True:
+                            msg = await websocket.receive()
+                            if msg.get("type") == "websocket.disconnect":
+                                return
+                            if "bytes" in msg and msg["bytes"] is not None:
+                                await up_ws.send(msg["bytes"])
+                            elif "text" in msg and msg["text"] is not None:
+                                await up_ws.send(msg["text"])
+                    except WebSocketDisconnect:
+                        return
+
+                async def _up_to_client():
+                    async for frame in up_ws:
+                        if isinstance(frame, bytes):
+                            await websocket.send_bytes(frame)
+                        else:
+                            await websocket.send_text(frame)
+
+                t1 = asyncio.create_task(_client_to_up())
+                t2 = asyncio.create_task(_up_to_client())
+                done, pending = await asyncio.wait(
+                    {t1, t2}, return_when=asyncio.FIRST_COMPLETED
+                )
+                for p in pending:
+                    p.cancel()
+        except Exception as exc:  # noqa: BLE001
+            _live_diag["lastError"] = f"proxy: {type(exc).__name__}: {exc}"
+            logger.warning("Upstream WS proxy closed: %r", exc)
+        return
 
     # Wait for the client's setup message (carries the per-session glossary).
     # Falls back to the on-disk default glossary if the client doesn't send one
