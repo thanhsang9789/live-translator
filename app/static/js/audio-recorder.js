@@ -35,19 +35,46 @@ function micConstraints(deviceId) {
  */
 async function getMicStream(prefs) {
   const base = { audio: { channelCount: 1, ...AUDIO_PROCESSING } };
-  if (!prefs || !prefs.length) return navigator.mediaDevices.getUserMedia(base);
+  let lastErr = null;
 
-  for (const id of await candidateIds("audioinput", prefs)) {
+  if (prefs && prefs.length) {
+    for (const id of await candidateIds("audioinput", prefs)) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(micConstraints(id));
+      } catch (err) {
+        if (isPermissionError(err)) throw err;
+        lastErr = err;
+        console.warn("Preferred mic unusable:", id, err.name, err.message);
+      }
+    }
+    console.warn("No preferred mic available, falling back to default and other inputs");
+  }
+
+  for (const constraints of [base, { audio: true }]) {
     try {
-      return await navigator.mediaDevices.getUserMedia(micConstraints(id));
+      return await navigator.mediaDevices.getUserMedia(constraints);
     } catch (err) {
       if (isPermissionError(err)) throw err;
-      console.warn("Preferred mic unusable:", id, err.name, err.message);
+      lastErr = err;
     }
   }
 
-  console.warn("No preferred mic available, falling back to the default");
-  return navigator.mediaDevices.getUserMedia(base);
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d => d.kind === "audioinput" && d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications");
+    for (const dev of inputs) {
+      for (const c of [micConstraints(dev.deviceId), { audio: { deviceId: { exact: dev.deviceId } } }]) {
+        try {
+          return await navigator.mediaDevices.getUserMedia(c);
+        } catch (err) {
+          if (isPermissionError(err)) throw err;
+          lastErr = err;
+        }
+      }
+    }
+  } catch {}
+
+  throw lastErr || new Error("No working microphone found");
 }
 
 export async function startAudioRecorderWorklet(audioRecorderHandler, devicePrefs) {

@@ -170,6 +170,16 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
 TEXT_TRANSLATION_MODEL = os.getenv("TEXT_TRANSLATION_MODEL", "gemini-3.5-flash-lite")
+FALLBACK_LIVE_MODELS = [
+    MODEL,
+    "gemini-2.5-flash-native-audio-preview-12-2025",
+    "gemini-2.0-flash-live-001",
+    "gemini-2.0-flash-exp",
+]
+_live_diag: dict[str, str | None] = {
+    "activeModel": None,
+    "lastError": None,
+}
 
 
 class TextTranslationRequest(BaseModel):
@@ -262,6 +272,8 @@ async def get_languages():
         "simulPopular": SIMUL_POPULAR_LANGUAGES,
         "voices": VOICES,
         "defaultVoice": DEFAULT_VOICE,
+        "activeLiveModel": _live_diag["activeModel"],
+        "lastLiveError": _live_diag["lastError"],
     }
 
 
@@ -588,10 +600,13 @@ async def websocket_endpoint(
                 asyncio.create_task(conn.__aexit__(None, None, None))
 
         retry_backoff = RETRY_BACKOFF_INIT
+        candidate_models = [active_model] if simul else list(dict.fromkeys([active_model, *FALLBACK_LIVE_MODELS]))
+        model_idx = 0
         while True:
             conn = None
             open_next_task = None
             error_cleanup = False
+            chosen_model = candidate_models[model_idx % len(candidate_models)]
             try:
                 if open_pending:
                     await next_ready.wait()
@@ -610,11 +625,13 @@ async def websocket_endpoint(
                     logger.debug("Using pre-opened session")
                 else:
                     cfg = _build_config()
-                    conn = client.aio.live.connect(model=active_model, config=cfg)
+                    conn = client.aio.live.connect(model=chosen_model, config=cfg)
                     session = await asyncio.wait_for(
                         conn.__aenter__(), timeout=CONNECT_TIMEOUT_SEC
                     )
-                    logger.debug("Opened fresh Live session")
+                    _live_diag["activeModel"] = chosen_model
+                    _live_diag["lastError"] = None
+                    logger.debug("Opened fresh Live session with model=%s", chosen_model)
 
                 if pending_preroll:
                     # Said into a session that was cut over before it could
@@ -847,10 +864,12 @@ async def websocket_endpoint(
             except WebSocketDisconnect:
                 error_cleanup = True
                 raise
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 error_cleanup = True
+                _live_diag["lastError"] = f"{chosen_model}: {type(exc).__name__}: {exc}"
+                model_idx += 1
                 logger.warning(
-                    "Session error; retrying in %.1fs", retry_backoff,
+                    "Session error on %s; retrying in %.1fs", chosen_model, retry_backoff,
                     exc_info=True,
                 )
                 await asyncio.sleep(retry_backoff)

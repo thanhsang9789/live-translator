@@ -151,6 +151,10 @@
         <div id="messages"></div>
 
         <div class="input-container">
+          <form id="messageForm" autocomplete="off">
+            <input type="text" id="message" placeholder="Type text to translate (works even without a microphone)..." maxlength="10000" />
+            <button type="submit" id="sendButton">Translate</button>
+          </form>
           <div class="input-wrapper">
             <!-- Simul is one-way into the target and stays silent on speech
                  that is already in it, which on screen is indistinguishable

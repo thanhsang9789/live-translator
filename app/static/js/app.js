@@ -663,7 +663,10 @@ function startAudio() {
       micMuted = false;
       updateAudioControls();
       startAudioButton.disabled = false;
-      addSystemMessage(`Could not start audio: ${errMsg}`);
+      const hint = String(errMsg).includes("NotReadableError")
+        ? " (Your system microphone appears unplugged or in use — connect a microphone in Voice & Audio settings, or type text below to translate.)"
+        : "";
+      addSystemMessage(`Could not start audio: ${errMsg}${hint}`);
       return;
     }
     const { src, tgt } = getLanguageNames();
@@ -1622,4 +1625,77 @@ window.addEventListener("storage", (e) => {
     applyTheme(e.newValue, false);
   }
 });
+
+/**
+ * Typed Text Translation (#messageForm -> POST /api/translate)
+ */
+const messageForm = document.getElementById("messageForm");
+const messageInput = document.getElementById("message");
+const sendButton = document.getElementById("sendButton");
+
+if (messageForm && messageInput && sendButton) {
+  messageForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const raw = messageInput.value.trim();
+    if (!raw) return;
+
+    messageInput.value = "";
+    sendButton.disabled = true;
+
+    const userBubble = createMessageBubble(raw, true, false);
+    userBubble.classList.add("transcription");
+    messagesDiv.appendChild(userBubble);
+
+    const agentBubble = createMessageBubble("", false, true);
+    agentBubble.classList.add("transcription");
+    messagesDiv.appendChild(agentBubble);
+    scrollToBottom();
+
+    const source = sourceLangSelect.value || "en";
+    const targetRaw = targetLangSelect.value || "ja";
+    const target = targetRaw in agentLangs ? targetRaw : (SIMUL_TO_AGENT[targetRaw] || targetRaw);
+
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: raw,
+          source,
+          target,
+          bidirectional: !simulMode && source !== target,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload.text) {
+        throw new Error(payload.detail || `Translation failed (${res.status})`);
+      }
+      const displayed = applyDisplayMap(payload.text);
+      updateMessageBubble(agentBubble, displayed, false);
+      overlayChannel.postMessage({
+        type: "outputTranscription",
+        text: displayed,
+        finished: true,
+      });
+      overlayChannel.postMessage({ type: "turnComplete" });
+      scrollToBottom();
+
+      if (!outputMuted && "speechSynthesis" in window) {
+        try {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(payload.text);
+          utter.lang = target;
+          window.speechSynthesis.speak(utter);
+        } catch {}
+      }
+    } catch (err) {
+      agentBubble.remove();
+      addSystemMessage(err.message || "Could not translate text. Please try again.");
+    } finally {
+      sendButton.disabled = false;
+      messageInput.focus();
+    }
+  });
+}
+
 
